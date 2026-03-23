@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Binance Scalper Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <h1>🤖 Binance Scalper</h1>
+                <span id="env-badge" class="badge">TESTNET</span>
+                <span id="mode-badge" class="badge">SPOT</span>
+            </div>
+            <div class="header-right">
+                <div class="price-display">
+                    <span id="symbol">BTCUSDT</span>
+                    <span id="current-price">$0.00</span>
+                </div>
+                <div class="last-update">
+                    Last update: <span id="last-update">--:--:--</span>
+                    <span id="loading-spinner" class="spinner"></span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Stats Cards -->
+        <div class="stats-row">
+            <div class="stat-card">
+                <div class="stat-label">Capital</div>
+                <div class="stat-value" id="capital">$0.00</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Total P&L</div>
+                <div class="stat-value" id="total-pnl">$0.00</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Daily P&L</div>
+                <div class="stat-value" id="daily-pnl">$0.00</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Win Rate</div>
+                <div class="stat-value" id="win-rate">0%</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Daily Trades</div>
+                <div class="stat-value" id="daily-trades">0</div>
+            </div>
+        </div>
+
+        <!-- Signal Panel -->
+        <div class="card signal-panel">
+            <h2>Trading Signal</h2>
+            <div class="signal-display">
+                <div class="signal-score">
+                    <span id="signal-direction">⚪ HOLD</span>
+                    <span id="signal-value">0.00</span>
+                </div>
+                <div class="signal-meter">
+                    <div id="signal-indicator" class="signal-indicator"></div>
+                </div>
+            </div>
+            <div class="strategy-scores">
+                <div class="strategy-row">
+                    <span class="strategy-name">RSI + EMA</span>
+                    <div class="strategy-bar">
+                        <div id="bar-rsi_ema" class="bar-fill"></div>
+                    </div>
+                    <span id="score-rsi_ema" class="strategy-score">0.00</span>
+                </div>
+                <div class="strategy-row">
+                    <span class="strategy-name">Bollinger</span>
+                    <div class="strategy-bar">
+                        <div id="bar-bollinger" class="bar-fill"></div>
+                    </div>
+                    <span id="score-bollinger" class="strategy-score">0.00</span>
+                </div>
+                <div class="strategy-row">
+                    <span class="strategy-name">Order Book</span>
+                    <div class="strategy-bar">
+                        <div id="bar-orderbook" class="bar-fill"></div>
+                    </div>
+                    <span id="score-orderbook" class="strategy-score">0.00</span>
+                </div>
+                <div class="strategy-row">
+                    <span class="strategy-name">ML Model</span>
+                    <div class="strategy-bar">
+                        <div id="bar-ml_signal" class="bar-fill"></div>
+                    </div>
+                    <span id="score-ml_signal" class="strategy-score">0.00</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Open Positions -->
+        <div class="card">
+            <h2>Open Positions (<span id="positions-count">0</span>)</h2>
+            <div id="positions-container" class="positions-container">
+                <p class="empty-message">No open positions</p>
+            </div>
+        </div>
+
+        <!-- Two Column Layout -->
+        <div class="two-column">
+            <!-- Technical Indicators -->
+            <div class="card">
+                <h2>Technical Indicators</h2>
+                <div class="indicators-grid">
+                    <div class="indicator-item">
+                        <span class="indicator-label">RSI</span>
+                        <span id="ind-rsi" class="indicator-value">--</span>
+                    </div>
+                    <div class="indicator-item">
+                        <span class="indicator-label">EMA Fast</span>
+                        <span id="ind-ema-fast" class="indicator-value">--</span>
+                    </div>
+                    <div class="indicator-item">
+                        <span class="indicator-label">EMA Slow</span>
+                        <span id="ind-ema-slow" class="indicator-value">--</span>
+                    </div>
+                    <div class="indicator-item">
+                        <span class="indicator-label">MACD Hist</span>
+                        <span id="ind-macd" class="indicator-value">--</span>
+                    </div>
+                    <div class="indicator-item">
+                        <span class="indicator-label">BB %</span>
+                        <span id="ind-bb-pct" class="indicator-value">--</span>
+                    </div>
+                    <div class="indicator-item">
+                        <span class="indicator-label">ATR %</span>
+                        <span id="ind-atr" class="indicator-value">--</span>
+                    </div>
+                    <div class="indicator-item">
+                        <span class="indicator-label">ADX</span>
+                        <span id="ind-adx" class="indicator-value">--</span>
+                    </div>
+                    <div class="indicator-item">
+                        <span class="indicator-label">Stoch K</span>
+                        <span id="ind-stoch" class="indicator-value">--</span>
+                    </div>
+                    <div class="indicator-item">
+                        <span class="indicator-label">VWAP</span>
+                        <span id="ind-vwap" class="indicator-value">--</span>
+                    </div>
+                    <div class="indicator-item">
+                        <span class="indicator-label">Vol Ratio</span>
+                        <span id="ind-vol" class="indicator-value">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Performance Summary -->
+            <div class="card">
+                <h2>Performance Summary</h2>
+                <div class="perf-grid">
+                    <div class="perf-item">
+                        <span class="perf-label">Total Trades</span>
+                        <span id="perf-total-trades" class="perf-value">0</span>
+                    </div>
+                    <div class="perf-item">
+                        <span class="perf-label">Wins / Losses</span>
+                        <span id="perf-wl" class="perf-value">0 / 0</span>
+                    </div>
+                    <div class="perf-item">
+                        <span class="perf-label">Avg Win</span>
+                        <span id="perf-avg-win" class="perf-value">$0.00</span>
+                    </div>
+                    <div class="perf-item">
+                        <span class="perf-label">Avg Loss</span>
+                        <span id="perf-avg-loss" class="perf-value">$0.00</span>
+                    </div>
+                    <div class="perf-item">
+                        <span class="perf-label">Profit Factor</span>
+                        <span id="perf-profit-factor" class="perf-value">--</span>
+                    </div>
+                    <div class="perf-item">
+                        <span class="perf-label">Best Trade</span>
+                        <span id="perf-best" class="perf-value">$0.00</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Performance Chart -->
+        <div class="card">
+            <h2>Equity Curve</h2>
+            <div class="chart-container">
+                <canvas id="performance-chart"></canvas>
+            </div>
+        </div>
+
+        <!-- Trade History -->
+        <div class="card">
+            <h2>Recent Trades</h2>
+            <div class="table-container">
+                <table id="trades-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Side</th>
+                            <th>Entry</th>
+                            <th>Exit</th>
+                            <th>P&L</th>
+                            <th>P&L %</th>
+                            <th>Reason</th>
+                        </tr>
+                    </thead>
+                    <tbody id="trades-body">
+                        <tr>
+                            <td colspan="7" class="empty-message">Loading...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <button id="load-more-trades" class="btn">Load More</button>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>
