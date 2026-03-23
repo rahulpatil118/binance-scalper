@@ -319,23 +319,23 @@ class SignalAggregator:
         if len(df) > 0:
             latest = df.iloc[-1]
 
-            # Filter 1: ATR volatility check
+            # Filter 1: ATR volatility check (relaxed for more trades)
             # If ATR % is too low, market is choppy/consolidating
             atr_pct = latest.get("atr_pct", 0)
-            if atr_pct < 0.05:  # Less than 0.05% volatility
-                combined *= 0.3  # Heavily dampen signal
-            elif atr_pct < 0.10:  # Low volatility
-                combined *= 0.6  # Moderately dampen signal
+            if atr_pct < 0.04:  # Very low volatility
+                combined *= 0.5  # Moderately dampen signal
+            elif atr_pct < 0.08:  # Low volatility
+                combined *= 0.8  # Slightly dampen signal
 
-            # Filter 2: ADX trend strength check (research-backed)
-            # ADX < 20 = weak/choppy trend, avoid trading
-            # ADX > 25 = strong trend, good for scalping
+            # Filter 2: ADX trend strength check (relaxed for 10x leverage)
+            # ADX < 15 = very weak trend, reduce signal
+            # ADX > 20 = decent trend, good for scalping
             adx = latest.get("adx", 0)
-            if adx < 20:  # Weak/choppy trend
-                combined *= 0.2  # Heavily dampen signal
-            elif adx < 25:  # Moderate trend
-                combined *= 0.7  # Moderately dampen signal
-            # If ADX >= 25, no dampening (strong trend)
+            if adx < 15:  # Very weak trend
+                combined *= 0.5  # Moderately dampen signal
+            elif adx < 20:  # Weak trend
+                combined *= 0.8  # Slightly dampen signal
+            # If ADX >= 20, no dampening (strong enough trend)
 
             # Filter 3: Bollinger Bands squeeze (already computed)
             # During squeeze, avoid trading until breakout

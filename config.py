@@ -26,9 +26,9 @@ TRADE_QUANTITY  = 0.001           # BTC per trade (adjust to your budget)
 
 # ── RISK MANAGEMENT ──────────────────────────────────────────
 RISK_PER_TRADE      = 0.05    # Max 5% of capital per trade
-STOP_LOSS_PCT       = 0.003   # 0.3% stop-loss (tighter for 5m timeframe)
-TAKE_PROFIT_PCT     = 0.006   # 0.6% take-profit (2:1 RR ratio)
-TRAILING_STOP_PCT   = 0.002   # 0.2% trailing stop
+STOP_LOSS_PCT       = 0.004   # 0.4% stop-loss (optimized for 10x leverage)
+TAKE_PROFIT_PCT     = 0.008   # 0.8% take-profit (2:1 RR ratio)
+TRAILING_STOP_PCT   = 0.003   # 0.3% trailing stop
 MAX_OPEN_TRADES     = 3       # Maximum concurrent positions
 MAX_DAILY_LOSS_PCT  = 0.05    # Stop trading if daily loss > 5%
 MAX_DAILY_TRADES    = 25      # Circuit breaker: reduced for 5m timeframe
@@ -40,7 +40,7 @@ STRATEGY_WEIGHTS = {
     "orderbook":    0.15,    # Reduced - less relevant on 5m
     "ml_signal":    0.20,
 }
-SIGNAL_THRESHOLD = 0.20   # Lower threshold for more trade opportunities
+SIGNAL_THRESHOLD = 0.05   # Very low threshold for catching trades quickly
 
 # ── RSI + EMA STRATEGY ───────────────────────────────────────
 RSI_PERIOD       = 7     # Faster RSI for 5m timeframe (research-backed)
@@ -71,7 +71,7 @@ ML_CONFIDENCE_MIN    = 0.55  # Min model confidence to use signal
 LOG_FILE          = "logs/trades.csv"
 LOG_LEVEL         = "INFO"    # DEBUG | INFO | WARNING | ERROR
 PRINT_CANDLES     = False     # Print every candle update
-DASHBOARD_REFRESH = 5         # Dashboard refresh rate (seconds)
+DASHBOARD_REFRESH = 1         # Dashboard refresh rate (seconds)
 
 # ── FUTURES TRADING ──────────────────────────────────────────
 USE_FUTURES = True                    # Toggle between spot/futures
@@ -80,7 +80,7 @@ MARGIN_TYPE = "ISOLATED"              # ISOLATED or CROSS
 POSITION_MODE = "HEDGE"               # Allows simultaneous LONG+SHORT
 
 # Safety parameters for liquidation
-LIQUIDATION_BUFFER_PCT = 0.20         # Stay 20% away from liquidation
+LIQUIDATION_BUFFER_PCT = 0.06         # Stay 6% away from liquidation (safe for 10x)
 MIN_MARGIN_RATIO = 0.30               # Close if margin ratio < 30%
 MAX_FUNDING_RATE_PCT = 0.05           # Close if funding too expensive (0.05% per 8h)
 

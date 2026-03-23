@@ -62,6 +62,8 @@ class Position:
         return (self.entry_price - price) * self.quantity
 
     def unrealised_pct(self, price: float) -> float:
+        if self.entry_price == 0 or self.quantity == 0:
+            return 0.0
         return self.unrealised_pnl(price) / (self.entry_price * self.quantity) * 100
 
 

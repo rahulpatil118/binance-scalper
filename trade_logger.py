@@ -35,9 +35,12 @@ class TradeLogger:
                   reason: str, signal_breakdown: dict):
         duration = time.time() - position.timestamp
         entry    = position.entry_price
-        pnl_pct  = (exit_price - entry) / entry * 100
-        if position.side == "SELL":
-            pnl_pct = -pnl_pct
+        if entry == 0:
+            pnl_pct = 0.0
+        else:
+            pnl_pct  = (exit_price - entry) / entry * 100
+            if position.side == "SELL":
+                pnl_pct = -pnl_pct
 
         scores = signal_breakdown.get("scores", {})
 

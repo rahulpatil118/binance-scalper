@@ -168,13 +168,15 @@ class ScalpingBot:
                 side, price, self.leverage)
 
             # Safety check: verify not starting too close to liquidation
+            from config import LIQUIDATION_BUFFER_PCT
             if side == "BUY":
                 distance = (price - liquidation_price) / price
             else:
                 distance = (liquidation_price - price) / price
 
-            if distance < 0.15:  # Less than 15% buffer
-                log.warning(f"Skipping: liquidation {liquidation_price:.2f} too close")
+            if distance < LIQUIDATION_BUFFER_PCT:
+                log.warning(f"Skipping: liquidation {liquidation_price:.2f} too close "
+                           f"({distance*100:.1f}% < {LIQUIDATION_BUFFER_PCT*100:.1f}%)")
                 return
 
             # Place futures order
@@ -182,7 +184,10 @@ class ScalpingBot:
             if not order:
                 return
 
-            fill_price = float(order.get("avgPrice", price))
+            # Get fill price from order response or use current market price
+            fill_price = float(order.get("avgPrice", 0))
+            if fill_price == 0:
+                fill_price = price  # Use current market price as fallback
 
             # Create position with futures params
             pos = self.risk_mgr.create_position(
