@@ -42,7 +42,9 @@ class TradeLogger:
             if position.side == "SELL":
                 pnl_pct = -pnl_pct
 
-        scores = signal_breakdown.get("scores", {})
+        # Use ENTRY signal, not exit signal for accurate logging
+        entry_signal = position.entry_signal if position.entry_signal else signal_breakdown
+        scores = entry_signal.get("scores", {})
 
         row = {
             "timestamp":      datetime.utcnow().isoformat(),
@@ -58,7 +60,7 @@ class TradeLogger:
             "bollinger_score":scores.get("bollinger", 0),
             "orderbook_score":scores.get("orderbook", 0),
             "ml_score":       scores.get("ml_signal", 0),
-            "combined_score": round(signal_breakdown.get("combined", 0), 4),
+            "combined_score": round(entry_signal.get("combined", 0), 4),
             "duration_sec":   round(duration, 1),
         }
 
@@ -92,14 +94,21 @@ class TradeLogger:
         wins     = [p for p in pnls if p > 0]
         losses   = [p for p in pnls if p <= 0]
 
+        # Calculate profit factor (JSON-safe, no infinity)
+        if losses and sum(losses) != 0:
+            profit_factor = round(sum(wins) / abs(sum(losses)), 2)
+        else:
+            profit_factor = 999.99  # Use large number instead of infinity for JSON compatibility
+
         return {
             "total_trades":   len(trades),
+            "wins":          len(wins),
+            "losses":        len(losses),
             "win_rate":       round(len(wins) / len(trades) * 100, 1),
             "total_pnl":      round(sum(pnls), 4),
             "avg_win":        round(sum(wins) / len(wins), 4)    if wins   else 0,
             "avg_loss":       round(sum(losses) / len(losses), 4) if losses else 0,
-            "profit_factor":  round(sum(wins) / abs(sum(losses)), 2)
-                              if losses and sum(losses) != 0 else float("inf"),
+            "profit_factor":  profit_factor,
             "best_trade":     round(max(pnls), 4),
             "worst_trade":    round(min(pnls), 4),
             "avg_pnl_pct":    round(sum(pnl_pcts) / len(pnl_pcts), 4),

@@ -221,6 +221,13 @@
         </div>
     </div>
 
-    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=5"></script>
+    <script>
+        // Initialize dashboard when page loads
+        $(document).ready(function() {
+            const dashboard = new Dashboard();
+            dashboard.init();
+        });
+    </script>
 </body>
 </html>

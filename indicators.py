@@ -76,6 +76,21 @@ def compute_volume_ratio(volume: pd.Series, period: int = 20) -> pd.Series:
     return volume / volume.rolling(period).mean().replace(0, np.nan)
 
 
+def compute_williams_r(high: pd.Series, low: pd.Series,
+                       close: pd.Series, period: int = 10) -> pd.Series:
+    """
+    Williams %R - Momentum oscillator (professional scalping indicator)
+    Returns values from 0 to -100
+    -20 to 0 = Overbought (sell signal)
+    -80 to -100 = Oversold (buy signal)
+    Period 10 is optimal for scalping (more sensitive than default 14)
+    """
+    highest = high.rolling(period).max()
+    lowest = low.rolling(period).min()
+    williams = -100 * (highest - close) / (highest - lowest + 1e-10)
+    return williams.fillna(-50)
+
+
 def compute_adx(high: pd.Series, low: pd.Series,
                 close: pd.Series, period: int = 14) -> tuple:
     """
@@ -127,10 +142,12 @@ def enrich_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     # RSI
     df["rsi"] = compute_rsi(c)
 
-    # EMAs
+    # EMAs (original + professional scalping 8/21)
     df["ema_fast"]  = compute_ema(c, EMA_FAST)
     df["ema_slow"]  = compute_ema(c, EMA_SLOW)
     df["ema_trend"] = compute_ema(c, EMA_TREND)
+    df["ema_8"]  = compute_ema(c, 8)   # Professional scalping
+    df["ema_21"] = compute_ema(c, 21)  # Professional scalping
 
     # MACD
     df["macd"], df["macd_signal"], df["macd_hist"] = compute_macd(c)
@@ -148,6 +165,9 @@ def enrich_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
     # Stochastic
     df["stoch_k"], df["stoch_d"] = compute_stochastic(h, lo, c)
+
+    # Williams %R (professional scalping momentum)
+    df["williams_r"] = compute_williams_r(h, lo, c, period=10)
 
     # Volume
     df["vol_ratio"] = compute_volume_ratio(v)

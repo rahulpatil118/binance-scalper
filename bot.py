@@ -9,7 +9,7 @@ from datetime import datetime
 
 from binance_client import BinanceClient
 from indicators    import enrich_dataframe
-from strategies    import SignalAggregator
+from strategies_pro import SignalAggregatorPro as SignalAggregator
 from risk_manager  import RiskManager
 from trade_logger  import TradeLogger
 from dashboard     import render_dashboard
@@ -121,16 +121,20 @@ class ScalpingBot:
                 self._manage_positions(current_price, signal_data, df)
 
                 # 4. Entry logic
-                can_trade, reason = self.risk_mgr.can_trade()
-                if can_trade:
-                    if combined >= SIGNAL_THRESHOLD:
+                if combined >= SIGNAL_THRESHOLD:
+                    can_trade, reason = self.risk_mgr.can_trade(new_side="BUY")
+                    if can_trade:
                         self._open_trade("BUY", current_price,
                                          signal_data, df)
-                    elif combined <= -SIGNAL_THRESHOLD:
+                    else:
+                        log.debug(f"BUY blocked: {reason}")
+                elif combined <= -SIGNAL_THRESHOLD:
+                    can_trade, reason = self.risk_mgr.can_trade(new_side="SELL")
+                    if can_trade:
                         self._open_trade("SELL", current_price,
                                          signal_data, df)
-                else:
-                    log.debug(f"Trade blocked: {reason}")
+                    else:
+                        log.debug(f"SELL blocked: {reason}")
 
                 # 5. Dashboard
                 if time.time() - last_dashboard >= DASHBOARD_REFRESH:
@@ -193,7 +197,8 @@ class ScalpingBot:
             pos = self.risk_mgr.create_position(
                 SYMBOL, side, fill_price, quantity, str(order["orderId"]),
                 is_futures=True, leverage=self.leverage,
-                liquidation_price=liquidation_price)
+                liquidation_price=liquidation_price,
+                entry_signal=signal_data)
 
             # Place stop-loss on exchange
             close_side = "SELL" if side == "BUY" else "BUY"
@@ -219,7 +224,8 @@ class ScalpingBot:
                          if order.get("fills") else price
 
             pos = self.risk_mgr.create_position(
-                SYMBOL, side, fill_price, quantity, str(order["orderId"]))
+                SYMBOL, side, fill_price, quantity, str(order["orderId"]),
+                entry_signal=signal_data)
 
             log.info(f"📈 OPEN {side} | Price={fill_price:.4f} | "
                      f"Qty={quantity} | Signal={signal_data['combined']:+.4f} | "

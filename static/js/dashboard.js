@@ -11,24 +11,32 @@ class Dashboard {
     }
 
     async init() {
-        console.log('Dashboard initializing...');
+        console.log('🚀 Dashboard initializing...');
 
-        // Initial data load
-        await this.updateAll();
+        try {
+            // Initial data load
+            console.log('📡 Loading initial data...');
+            await this.updateAll();
 
-        // Load performance chart
-        await this.initChart();
+            // Load performance chart
+            console.log('📊 Initializing chart...');
+            await this.initChart();
 
-        // Load initial trades
-        await this.loadTrades();
+            // Load initial trades
+            console.log('📜 Loading trades...');
+            await this.loadTrades();
 
-        // Start auto-update loop
-        this.startAutoUpdate();
+            // Start auto-update loop
+            console.log('⏰ Starting auto-update (1 second interval)...');
+            this.startAutoUpdate();
 
-        // Setup event listeners
-        this.setupEventListeners();
+            // Setup event listeners
+            this.setupEventListeners();
 
-        console.log('Dashboard initialized');
+            console.log('✅ Dashboard initialized successfully');
+        } catch (error) {
+            console.error('❌ Dashboard initialization failed:', error);
+        }
     }
 
     async updateAll() {
@@ -79,6 +87,8 @@ class Dashboard {
     }
 
     updateStatus(data) {
+        console.log('💰 Updating status:', data);
+
         // Update header
         $('#symbol').text(data.symbol);
         $('#current-price').text(this.formatPrice(data.price));
@@ -91,6 +101,8 @@ class Dashboard {
         this.animateValue('#daily-pnl', data.account.daily_pnl, true);
         this.animateValue('#win-rate', data.account.win_rate, false, '%');
         this.animateValue('#daily-trades', data.account.daily_trades, false);
+
+        console.log('✓ Status updated');
 
         // Color code P&L
         $('#total-pnl').css('color', data.account.total_pnl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)');
@@ -155,11 +167,29 @@ class Dashboard {
             return;
         }
 
-        container.empty();
+        // Smart update: only recreate if count changed, otherwise update values in place
+        const existingCards = container.find('.position-card');
 
-        for (const pos of data.positions) {
-            const card = this.createPositionCard(pos);
-            container.append(card);
+        if (existingCards.length !== data.count) {
+            // Position count changed - full rebuild
+            container.empty();
+            for (const pos of data.positions) {
+                const card = this.createPositionCard(pos);
+                container.append(card);
+            }
+        } else {
+            // Same number of positions - update values only (prevents flickering)
+            data.positions.forEach((pos, idx) => {
+                const card = $(existingCards[idx]);
+                const pnlColor = pos.unrealised_pnl >= 0 ? 'green' : 'red';
+                const timeAgo = this.formatDuration(pos.duration_sec);
+
+                // Update only the changing values
+                card.find('.pos-time').text(timeAgo);
+                card.find('.pos-pnl')
+                    .removeClass('green red').addClass(pnlColor)
+                    .html(`${pos.unrealised_pnl >= 0 ? '+' : ''}${this.formatMoney(pos.unrealised_pnl)} (${pos.unrealised_pnl >= 0 ? '+' : ''}${pos.unrealised_pct.toFixed(2)}%)`);
+            });
         }
     }
 
@@ -221,11 +251,31 @@ class Dashboard {
     async initChart() {
         try {
             const data = await this.fetchAPI('/api/performance');
-            if (!data || !data.chart_data) return;
+            if (!data || !data.chart_data) {
+                console.error('No performance data available');
+                return;
+            }
 
-            const ctx = document.getElementById('performance-chart').getContext('2d');
+            const canvas = document.getElementById('performance-chart');
+            if (!canvas) {
+                console.error('Chart canvas element not found');
+                return;
+            }
+            const ctx = canvas.getContext('2d');
 
             const equityCurve = data.chart_data.equity_curve || [];
+            console.log('Equity curve data points:', equityCurve.length);
+
+            // If no data, create initial point with current capital
+            if (equityCurve.length === 0) {
+                const statusData = await this.fetchAPI('/api/status');
+                if (statusData && statusData.account) {
+                    equityCurve.push({
+                        timestamp: new Date().toISOString(),
+                        capital: statusData.account.capital
+                    });
+                }
+            }
 
             this.chart = new Chart(ctx, {
                 type: 'line',
@@ -362,7 +412,34 @@ class Dashboard {
     startAutoUpdate() {
         setInterval(() => {
             this.updateAll();
+            this.updateChart();  // Update chart every second
         }, this.updateInterval);
+    }
+
+    async updateChart() {
+        try {
+            const data = await this.fetchAPI('/api/performance');
+            if (!data || !data.chart_data || !this.chart) return;
+
+            const equityCurve = data.chart_data.equity_curve || [];
+
+            // Update chart data
+            this.chart.data.labels = equityCurve.map(d => new Date(d.timestamp).toLocaleTimeString());
+            this.chart.data.datasets[0].data = equityCurve.map(d => d.capital);
+            this.chart.update('none'); // 'none' = no animation for instant update
+
+            // Update performance summary
+            if (data.summary) {
+                $('#perf-total-trades').text(data.summary.total_trades || 0);
+                $('#perf-wl').text(`${data.summary.wins || 0} / ${data.summary.losses || 0}`);
+                $('#perf-avg-win').text(this.formatMoney(data.summary.avg_win || 0));
+                $('#perf-avg-loss').text(this.formatMoney(data.summary.avg_loss || 0));
+                $('#perf-profit-factor').text((data.summary.profit_factor || 0).toFixed(2));
+                $('#perf-best').text(this.formatMoney(data.summary.best_trade || 0));
+            }
+        } catch (error) {
+            console.error('Chart update failed:', error);
+        }
     }
 
     setupEventListeners() {
@@ -375,17 +452,12 @@ class Dashboard {
         const el = $(selector);
         const oldValue = parseFloat(el.text().replace(/[^0-9.-]/g, '')) || 0;
 
-        $({value: oldValue}).animate({value: newValue}, {
-            duration: 500,
-            easing: 'swing',
-            step: function() {
-                if (isMoney) {
-                    el.text('$' + this.value.toFixed(2));
-                } else {
-                    el.text(this.value.toFixed(2) + suffix);
-                }
-            }
-        });
+        // Instant update for real-time trading data - no animation delay
+        if (isMoney) {
+            el.text('$' + newValue.toFixed(2));
+        } else {
+            el.text(newValue.toFixed(2) + suffix);
+        }
     }
 
     formatPrice(price) {

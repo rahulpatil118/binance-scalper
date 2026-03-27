@@ -1,0 +1,16 @@
+AWS EC2 Instance Details
+========================
+
+Region:           ap-south-1 (Mumbai)
+Instance ID:      i-0a2f9f15b59c60b34
+Public IP:        13.201.103.56
+Key Pair:         ~/.ssh/trading-bot-key-mumbai.pem
+Security Group:   sg-02d2cd0f9625d7ba3
+
+SSH Command:
+ssh -i ~/.ssh/trading-bot-key-mumbai.pem ubuntu@13.201.103.56
+
+Dashboard Tunnel:
+ssh -i ~/.ssh/trading-bot-key-mumbai.pem -L 5000:localhost:5000 ubuntu@13.201.103.56
+
+Then open: http://localhost:5000

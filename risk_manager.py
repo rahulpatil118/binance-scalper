@@ -33,18 +33,56 @@ class Position:
     liquidation_price: float = 0.0
     initial_margin: float = 0.0
 
+    # Store entry signal for accurate logging
+    entry_signal: dict = field(default_factory=dict)
+
+    # Trailing take-profit fields
+    tp_trailing_active: bool = False
+    highest_profit_price: float = 0.0
+    lowest_profit_price: float = float('inf')
+    trailing_take_profit: float = 0.0
+
     def update_trailing(self, current_price: float):
-        """Adjust trailing stop as price moves in our favour."""
+        """Adjust trailing stop AND trailing take-profit as price moves in our favour."""
         if self.side == "BUY":
+            # Update trailing stop-loss
             if current_price > self.highest_price:
                 self.highest_price = current_price
                 new_stop = current_price * (1 - TRAILING_STOP_PCT)
                 self.trailing_stop = max(self.trailing_stop, new_stop)
+
+            # Activate trailing take-profit once we hit initial TP target
+            if current_price >= self.take_profit and not self.tp_trailing_active:
+                self.tp_trailing_active = True
+                self.highest_profit_price = current_price
+                log.info(f"[TRAILING TP] Activated for BUY at {current_price:.2f}")
+
+            # Update trailing take-profit (lock in profits)
+            if self.tp_trailing_active:
+                if current_price > self.highest_profit_price:
+                    self.highest_profit_price = current_price
+                # Trail TP below the highest profit price
+                self.trailing_take_profit = self.highest_profit_price * (1 - TRAILING_STOP_PCT)
+
         else:  # SELL
+            # Update trailing stop-loss
             if current_price < self.lowest_price:
                 self.lowest_price = current_price
                 new_stop = current_price * (1 + TRAILING_STOP_PCT)
                 self.trailing_stop = min(self.trailing_stop, new_stop)
+
+            # Activate trailing take-profit once we hit initial TP target
+            if current_price <= self.take_profit and not self.tp_trailing_active:
+                self.tp_trailing_active = True
+                self.lowest_profit_price = current_price
+                log.info(f"[TRAILING TP] Activated for SELL at {current_price:.2f}")
+
+            # Update trailing take-profit (lock in profits)
+            if self.tp_trailing_active:
+                if current_price < self.lowest_profit_price:
+                    self.lowest_profit_price = current_price
+                # Trail TP above the lowest profit price
+                self.trailing_take_profit = self.lowest_profit_price * (1 + TRAILING_STOP_PCT)
 
     def should_stop_loss(self, price: float) -> bool:
         if self.side == "BUY":
@@ -52,9 +90,25 @@ class Position:
         return price >= min(self.stop_loss, self.trailing_stop)
 
     def should_take_profit(self, price: float) -> bool:
+        """
+        Check if we should exit for take-profit.
+        Uses trailing TP once activated (price went past initial TP and then reversed).
+        """
         if self.side == "BUY":
-            return price >= self.take_profit
-        return price <= self.take_profit
+            if self.tp_trailing_active:
+                # In trailing mode: exit if price drops to trailing TP level
+                return price <= self.trailing_take_profit
+            else:
+                # Not trailing yet: just check if we hit initial target
+                # (Note: update_trailing() will activate trailing, we won't exit immediately)
+                return False  # Never exit on first touch, let it trail
+        else:  # SELL
+            if self.tp_trailing_active:
+                # In trailing mode: exit if price rises to trailing TP level
+                return price >= self.trailing_take_profit
+            else:
+                # Not trailing yet
+                return False  # Never exit on first touch, let it trail
 
     def unrealised_pnl(self, price: float) -> float:
         if self.side == "BUY":
@@ -91,7 +145,12 @@ class RiskManager:
             self.paused       = False
 
     # ── Can we open a new trade? ──────────────────────────────
-    def can_trade(self) -> tuple[bool, str]:
+    def can_trade(self, new_side: str = None) -> tuple[bool, str]:
+        """
+        Check if we can open a new trade.
+        Args:
+            new_side: Optional side ("BUY" or "SELL") to check for same-direction positions
+        """
         self._maybe_reset_day()
 
         if self.paused:
@@ -99,6 +158,12 @@ class RiskManager:
 
         if len(self.open_positions) >= MAX_OPEN_TRADES:
             return False, f"Max open trades reached ({MAX_OPEN_TRADES})"
+
+        # CRITICAL: When MAX_OPEN_TRADES = 1, prevent duplicate positions in same direction
+        if new_side and MAX_OPEN_TRADES == 1:
+            for pos in self.open_positions.values():
+                if pos.side == new_side:
+                    return False, f"Already have {new_side} position open (single position mode)"
 
         if self.daily_trades >= MAX_DAILY_TRADES:
             self.paused      = True
@@ -177,7 +242,8 @@ class RiskManager:
     def create_position(self, symbol: str, side: str,
                         entry_price: float, quantity: float,
                         order_id: str, is_futures: bool = False,
-                        leverage: int = 1, liquidation_price: float = 0.0) -> Position:
+                        leverage: int = 1, liquidation_price: float = 0.0,
+                        entry_signal: dict = None) -> Position:
         """Create position with proper SL/TP. For futures, ensure SL before liquidation."""
 
         if side == "BUY":
@@ -211,6 +277,7 @@ class RiskManager:
             highest_price=entry_price, lowest_price=entry_price,
             is_futures=is_futures, leverage=leverage,
             liquidation_price=liquidation_price,
+            entry_signal=entry_signal or {},
         )
         self.open_positions[order_id] = pos
         self.daily_trades += 1

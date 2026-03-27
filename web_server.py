@@ -7,6 +7,8 @@ import threading
 from datetime import datetime
 from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
+import math
+import json
 
 log = logging.getLogger("WebServer")
 
@@ -18,7 +20,11 @@ binance_client = None
 bot_instance = None
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for development
+CORS(app)
+
+# Configure JSON encoder to handle infinity/NaN properly
+app.config['JSON_SORT_KEYS'] = False
+app.json.ensure_ascii = False  # Enable CORS for development
 
 
 # ── Routes ─────────────────────────────────────────────────
@@ -350,6 +356,17 @@ def api_performance():
                     "hour": hour,
                     "win_rate": win_rate
                 })
+
+        # Fix any infinity/NaN values in perf summary (JSON-safe)
+        def sanitize_value(v):
+            if isinstance(v, float):
+                if math.isinf(v) or math.isnan(v):
+                    log.warning(f"Replacing infinity/NaN value: {v}")
+                    return 999.99
+            return v
+
+        perf = {k: sanitize_value(v) for k, v in perf.items()}
+        log.debug(f"Sanitized perf: {perf}")
 
         return jsonify({
             "summary": perf,
