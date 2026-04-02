@@ -7,7 +7,11 @@ from dataclasses import dataclass, field
 from typing import Optional
 from config import (RISK_PER_TRADE, STOP_LOSS_PCT, TAKE_PROFIT_PCT,
                     TRAILING_STOP_PCT, MAX_OPEN_TRADES,
-                    MAX_DAILY_LOSS_PCT, MAX_DAILY_TRADES)
+                    MAX_DAILY_LOSS_PCT, MAX_DAILY_TRADES,
+                    MAX_DRAWDOWN_PCT, ENABLE_CIRCUIT_BREAKERS,
+                    CONSECUTIVE_LOSS_LIMIT, LOSS_STREAK_PAUSE_LIMIT,
+                    LOSS_STREAK_PAUSE_HOURS, DRAWDOWN_RISK_REDUCTION,
+                    TRADE_COOLDOWN_SECONDS)
 
 log = logging.getLogger("RiskManager")
 
@@ -124,6 +128,8 @@ class Position:
 class RiskManager:
     def __init__(self, starting_capital: float):
         self.capital         = starting_capital
+        self.starting_capital = starting_capital  # Track initial capital for drawdown
+        self.peak_capital    = starting_capital   # Track highest capital reached
         self.daily_pnl       = 0.0
         self.daily_trades    = 0
         self.open_positions: dict[str, Position] = {}
@@ -133,6 +139,15 @@ class RiskManager:
         self.total_pnl       = 0.0
         self.win_count       = 0
         self.loss_count      = 0
+
+        # Circuit Breaker tracking
+        self.consecutive_losses = 0
+        self.pause_until_time = 0  # Timestamp when pause expires
+        self.risk_reduction_active = False
+
+        # Trade cooldown tracking (prevent rapid re-entry)
+        self.last_exit_time = {"BUY": 0, "SELL": 0}  # Track last exit time per side
+        self.trade_cooldown_seconds = TRADE_COOLDOWN_SECONDS  # Cooldown after closing
 
     # ── Daily reset ──────────────────────────────────────────
     def _maybe_reset_day(self):
@@ -144,6 +159,32 @@ class RiskManager:
             self._day_start   = now
             self.paused       = False
 
+    # ── Circuit Breaker Checks ──────────────────────────────────
+    def check_circuit_breakers(self) -> tuple[bool, str]:
+        """Check if circuit breakers should halt trading."""
+        if not ENABLE_CIRCUIT_BREAKERS:
+            return True, "OK"
+
+        # Check if we're in a timed pause
+        if self.pause_until_time > 0:
+            now = time.time()
+            if now < self.pause_until_time:
+                remaining = (self.pause_until_time - now) / 3600  # hours
+                return False, f"Paused for {remaining:.1f} more hours (loss streak protection)"
+            else:
+                # Pause expired, clear it
+                self.pause_until_time = 0
+                self.consecutive_losses = 0
+                self.risk_reduction_active = False
+                log.info("🟢 Loss streak pause expired - resuming trading")
+
+        # Check drawdown limit
+        current_drawdown = (self.peak_capital - self.capital) / self.peak_capital
+        if current_drawdown >= MAX_DRAWDOWN_PCT:
+            return False, f"Max drawdown reached ({current_drawdown*100:.1f}% >= {MAX_DRAWDOWN_PCT*100:.0f}%)"
+
+        return True, "OK"
+
     # ── Can we open a new trade? ──────────────────────────────
     def can_trade(self, new_side: str = None) -> tuple[bool, str]:
         """
@@ -153,17 +194,34 @@ class RiskManager:
         """
         self._maybe_reset_day()
 
+        # Check circuit breakers first
+        can_trade_cb, reason_cb = self.check_circuit_breakers()
+        if not can_trade_cb:
+            self.paused = True
+            self.pause_reason = reason_cb
+            return False, reason_cb
+
         if self.paused:
             return False, f"Bot paused: {self.pause_reason}"
+
+        # Check trade cooldown (prevent rapid re-entry after closing)
+        if new_side:
+            now = time.time()
+            last_exit = self.last_exit_time.get(new_side, 0)
+            cooldown_remaining = self.trade_cooldown_seconds - (now - last_exit)
+
+            if cooldown_remaining > 0:
+                return False, f"Trade cooldown: {int(cooldown_remaining)}s remaining for {new_side}"
 
         if len(self.open_positions) >= MAX_OPEN_TRADES:
             return False, f"Max open trades reached ({MAX_OPEN_TRADES})"
 
-        # CRITICAL: When MAX_OPEN_TRADES = 1, prevent duplicate positions in same direction
-        if new_side and MAX_OPEN_TRADES == 1:
+        # SMART POSITION LOGIC: Prevent duplicate same-direction positions, allow hedging
+        # This ensures we only open new positions with different signals/directions
+        if new_side:
             for pos in self.open_positions.values():
                 if pos.side == new_side:
-                    return False, f"Already have {new_side} position open (single position mode)"
+                    return False, f"Already have {new_side} position open (preventing duplicate). Close existing or wait for opposite signal to hedge."
 
         if self.daily_trades >= MAX_DAILY_TRADES:
             self.paused      = True
@@ -186,8 +244,17 @@ class RiskManager:
         Kelly-inspired sizing:
         risk_amount = capital * RISK_PER_TRADE * |signal_strength|
         quantity    = risk_amount / (entry_price * stop_loss_pct)
+
+        Apply risk reduction if circuit breaker is active.
         """
-        risk_amount = self.capital * RISK_PER_TRADE * abs(signal_strength)
+        risk_per_trade = RISK_PER_TRADE
+
+        # Apply risk reduction if consecutive losses detected
+        if self.risk_reduction_active:
+            risk_per_trade *= DRAWDOWN_RISK_REDUCTION
+            log.info(f"📉 Risk reduced to {risk_per_trade*100:.1f}% due to consecutive losses")
+
+        risk_amount = self.capital * risk_per_trade * abs(signal_strength)
         quantity    = risk_amount / (price * STOP_LOSS_PCT)
         quantity    = max(round(quantity, 3), min_qty)
         log.debug(f"Sizing: capital={self.capital:.2f}, risk={risk_amount:.2f}, "
@@ -199,9 +266,18 @@ class RiskManager:
         """
         Calculate position size for futures with leverage.
         Returns: (quantity, initial_margin_required)
+
+        Apply risk reduction if circuit breaker is active.
         """
+        risk_per_trade = RISK_PER_TRADE
+
+        # Apply risk reduction if consecutive losses detected
+        if self.risk_reduction_active:
+            risk_per_trade *= DRAWDOWN_RISK_REDUCTION
+            log.info(f"📉 Risk reduced to {risk_per_trade*100:.1f}% due to consecutive losses")
+
         # Use same Kelly-inspired sizing
-        risk_amount = self.capital * RISK_PER_TRADE * abs(signal_strength)
+        risk_amount = self.capital * risk_per_trade * abs(signal_strength)
         quantity = risk_amount / (price * STOP_LOSS_PCT)
         quantity = max(round(quantity, 3), min_qty)
 
@@ -243,13 +319,29 @@ class RiskManager:
                         entry_price: float, quantity: float,
                         order_id: str, is_futures: bool = False,
                         leverage: int = 1, liquidation_price: float = 0.0,
-                        entry_signal: dict = None) -> Position:
-        """Create position with proper SL/TP. For futures, ensure SL before liquidation."""
+                        entry_signal: dict = None, atr: float = 0.0) -> Position:
+        """
+        Create position with proper SL/TP. For futures, ensure SL before liquidation.
+
+        If USE_ATR_EXITS is enabled and ATR is provided, use ATR-based exits for better R:R.
+        """
+        from config import USE_ATR_EXITS, ATR_SL_MULTIPLIER, ATR_TP_MULTIPLIER
+
+        # Determine if we should use ATR-based exits
+        use_atr = USE_ATR_EXITS and atr > 0
 
         if side == "BUY":
-            stop_loss    = entry_price * (1 - STOP_LOSS_PCT)
-            take_profit  = entry_price * (1 + TAKE_PROFIT_PCT)
-            trailing_stp = entry_price * (1 - TRAILING_STOP_PCT)
+            if use_atr:
+                # ATR-based exits: SL = entry - (ATR × multiplier)
+                stop_loss    = entry_price - (atr * ATR_SL_MULTIPLIER)
+                take_profit  = entry_price + (atr * ATR_TP_MULTIPLIER)
+                trailing_stp = entry_price - (atr * ATR_SL_MULTIPLIER * 0.5)
+                log.debug(f"ATR-based exits: SL={stop_loss:.2f} TP={take_profit:.2f} (R:R = 1:{ATR_TP_MULTIPLIER/ATR_SL_MULTIPLIER:.1f})")
+            else:
+                # Fixed percentage exits
+                stop_loss    = entry_price * (1 - STOP_LOSS_PCT)
+                take_profit  = entry_price * (1 + TAKE_PROFIT_PCT)
+                trailing_stp = entry_price * (1 - TRAILING_STOP_PCT)
 
             # CRITICAL: Ensure stop-loss is ABOVE liquidation for LONG
             if is_futures and liquidation_price > 0:
@@ -258,9 +350,17 @@ class RiskManager:
                     stop_loss = min_sl
                     log.warning(f"Adjusted SL to {stop_loss:.2f} (liq={liquidation_price:.2f})")
         else:
-            stop_loss    = entry_price * (1 + STOP_LOSS_PCT)
-            take_profit  = entry_price * (1 - TAKE_PROFIT_PCT)
-            trailing_stp = entry_price * (1 + TRAILING_STOP_PCT)
+            if use_atr:
+                # ATR-based exits: SL = entry + (ATR × multiplier)
+                stop_loss    = entry_price + (atr * ATR_SL_MULTIPLIER)
+                take_profit  = entry_price - (atr * ATR_TP_MULTIPLIER)
+                trailing_stp = entry_price + (atr * ATR_SL_MULTIPLIER * 0.5)
+                log.debug(f"ATR-based exits: SL={stop_loss:.2f} TP={take_profit:.2f} (R:R = 1:{ATR_TP_MULTIPLIER/ATR_SL_MULTIPLIER:.1f})")
+            else:
+                # Fixed percentage exits
+                stop_loss    = entry_price * (1 + STOP_LOSS_PCT)
+                take_profit  = entry_price * (1 - TAKE_PROFIT_PCT)
+                trailing_stp = entry_price * (1 + TRAILING_STOP_PCT)
 
             # CRITICAL: Ensure stop-loss is BELOW liquidation for SHORT
             if is_futures and liquidation_price > 0:
@@ -296,10 +396,38 @@ class RiskManager:
         self.total_pnl  += pnl
         self.capital    += pnl
 
+        # Update peak capital for drawdown tracking
+        if self.capital > self.peak_capital:
+            self.peak_capital = self.capital
+
+        # Record exit time for cooldown tracking
+        self.last_exit_time[pos.side] = time.time()
+        log.debug(f"🕐 Cooldown activated for {pos.side}: {self.trade_cooldown_seconds}s")
+
         if pnl >= 0:
             self.win_count  += 1
+            # Reset consecutive losses on a win
+            self.consecutive_losses = 0
+            self.risk_reduction_active = False
         else:
             self.loss_count += 1
+
+            # Circuit Breaker: Track consecutive losses
+            if ENABLE_CIRCUIT_BREAKERS:
+                self.consecutive_losses += 1
+
+                # Trigger risk reduction after consecutive loss limit
+                if self.consecutive_losses >= CONSECUTIVE_LOSS_LIMIT:
+                    self.risk_reduction_active = True
+                    log.warning(f"⚠️ {self.consecutive_losses} consecutive losses - "
+                              f"reducing position size by {DRAWDOWN_RISK_REDUCTION*100:.0f}%")
+
+                # Trigger pause after loss streak limit
+                if self.consecutive_losses >= LOSS_STREAK_PAUSE_LIMIT:
+                    self.pause_until_time = time.time() + (LOSS_STREAK_PAUSE_HOURS * 3600)
+                    self.paused = True
+                    self.pause_reason = f"{self.consecutive_losses} consecutive losses - pausing for {LOSS_STREAK_PAUSE_HOURS}h"
+                    log.error(f"🛑 CIRCUIT BREAKER: {self.pause_reason}")
 
         log.info(f"[CLOSE] {pos.side} {pos.symbol} | "
                  f"Entry={pos.entry_price:.4f} Exit={exit_price:.4f} | "

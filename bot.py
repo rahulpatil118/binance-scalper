@@ -14,6 +14,7 @@ from risk_manager  import RiskManager
 from trade_logger  import TradeLogger
 from dashboard     import render_dashboard
 from web_server    import start_web_server
+from adaptive_learner import AdaptiveLearner  # Self-learning AI
 from config        import (SYMBOL, INTERVAL, SIGNAL_THRESHOLD,
                             STRATEGY_WEIGHTS, USE_TESTNET,
                             ML_RETRAIN_INTERVAL, ML_MODEL_PATH,
@@ -56,6 +57,10 @@ class ScalpingBot:
             starting_capital = 1_000.0   # fallback for testnet
             log.warning(f"Could not fetch balance — using default ${starting_capital}")
         self.risk_mgr   = RiskManager(starting_capital)
+
+        # Initialize self-learning AI system
+        self.learner = AdaptiveLearner()
+        log.info("🧠 Self-learning AI system activated")
 
         mode_str = "FUTURES" if USE_FUTURES else "SPOT"
         lev_str = f" {self.leverage}x" if USE_FUTURES else ""
@@ -120,21 +125,31 @@ class ScalpingBot:
                 # 3. Manage existing positions
                 self._manage_positions(current_price, signal_data, df)
 
-                # 4. Entry logic
+                # 4. Entry logic with 60%+ strategy filters
                 if combined >= SIGNAL_THRESHOLD:
-                    can_trade, reason = self.risk_mgr.can_trade(new_side="BUY")
-                    if can_trade:
-                        self._open_trade("BUY", current_price,
-                                         signal_data, df)
+                    # Advanced validation for 60%+ accuracy
+                    valid, reason = self._validate_60plus_filters("BUY", df, signal_data)
+                    if not valid:
+                        log.debug(f"BUY filtered (60%+): {reason}")
                     else:
-                        log.debug(f"BUY blocked: {reason}")
+                        can_trade, reason = self.risk_mgr.can_trade(new_side="BUY")
+                        if can_trade:
+                            self._open_trade("BUY", current_price,
+                                             signal_data, df)
+                        else:
+                            log.debug(f"BUY blocked: {reason}")
                 elif combined <= -SIGNAL_THRESHOLD:
-                    can_trade, reason = self.risk_mgr.can_trade(new_side="SELL")
-                    if can_trade:
-                        self._open_trade("SELL", current_price,
-                                         signal_data, df)
+                    # Advanced validation for 60%+ accuracy
+                    valid, reason = self._validate_60plus_filters("SELL", df, signal_data)
+                    if not valid:
+                        log.debug(f"SELL filtered (60%+): {reason}")
                     else:
-                        log.debug(f"SELL blocked: {reason}")
+                        can_trade, reason = self.risk_mgr.can_trade(new_side="SELL")
+                        if can_trade:
+                            self._open_trade("SELL", current_price,
+                                             signal_data, df)
+                        else:
+                            log.debug(f"SELL blocked: {reason}")
 
                 # 5. Dashboard
                 if time.time() - last_dashboard >= DASHBOARD_REFRESH:
@@ -148,7 +163,7 @@ class ScalpingBot:
 
                 # Sleep to align with next candle close
                 elapsed = time.time() - loop_start
-                sleep_time = max(1.0, 10.0 - elapsed)   # poll every ~10s
+                sleep_time = max(1.0, 3.0 - elapsed)   # poll every ~3s (optimized for scalping)
                 time.sleep(sleep_time)
 
             except Exception as e:
@@ -160,6 +175,9 @@ class ScalpingBot:
                     signal_data: dict, df):
         """Open position (spot or futures)."""
         sym_info = self.client.get_symbol_info(SYMBOL)
+
+        # Extract ATR for ATR-based exits
+        atr = float(df.iloc[-1].get('atr', 0)) if not df.empty else 0.0
 
         if self.is_futures:
             # Futures with leverage
@@ -198,7 +216,7 @@ class ScalpingBot:
                 SYMBOL, side, fill_price, quantity, str(order["orderId"]),
                 is_futures=True, leverage=self.leverage,
                 liquidation_price=liquidation_price,
-                entry_signal=signal_data)
+                entry_signal=signal_data, atr=atr)
 
             # Place stop-loss on exchange
             close_side = "SELL" if side == "BUY" else "BUY"
@@ -225,7 +243,7 @@ class ScalpingBot:
 
             pos = self.risk_mgr.create_position(
                 SYMBOL, side, fill_price, quantity, str(order["orderId"]),
-                entry_signal=signal_data)
+                entry_signal=signal_data, atr=atr)
 
             log.info(f"📈 OPEN {side} | Price={fill_price:.4f} | "
                      f"Qty={quantity} | Signal={signal_data['combined']:+.4f} | "
@@ -282,6 +300,34 @@ class ScalpingBot:
             self.trade_log.log_trade(closed, price, reason, self._last_signal)
             self._trades_since_retrain += 1
 
+            # Record trade in self-learning system
+            if self._latest_df is not None and not self._latest_df.empty:
+                indicators_row = self._latest_df.iloc[-1]
+                trade_data = {
+                    'timestamp': datetime.now().isoformat(),
+                    'side': closed.side,
+                    'entry_price': closed.entry_price,
+                    'exit_price': price,
+                    'pnl': closed.pnl,
+                    'pnl_pct': (closed.pnl / (closed.entry_price * closed.quantity)) * 100,
+                    'duration_sec': int(time.time() - closed.timestamp),
+                    'reason': reason,
+                    'signal_strength': abs(closed.entry_signal.get('combined', 0)),
+                    'indicators': {
+                        'rsi': float(indicators_row.get('rsi', 0)),
+                        'adx': float(indicators_row.get('adx', 0)),
+                        'atr_pct': float(indicators_row.get('atr_pct', 0)),
+                        'candle_body': float(indicators_row.get('candle_body', 0)) / 100,
+                        'macd_hist': float(indicators_row.get('macd_hist', 0)),
+                        'stoch_k': float(indicators_row.get('stoch_k', 0)),
+                    },
+                    'market_conditions': {
+                        'bb_squeeze': bool(indicators_row.get('bb_squeeze', False)),
+                        'vol_ratio': float(indicators_row.get('vol_ratio', 1.0)),
+                    }
+                }
+                self.learner.record_trade(trade_data)
+
     def _signal_reversal(self, current_side: str, signal_data: dict) -> bool:
         """Exit if signal strongly reverses against our position."""
         c = signal_data["combined"]
@@ -290,6 +336,57 @@ class ScalpingBot:
         if current_side == "SELL" and c >  SIGNAL_THRESHOLD * 0.8:
             return True
         return False
+
+    def _validate_60plus_filters(self, side: str, df, signal_data: dict):
+        """
+        Balanced Scalping Strategy v2.0 - Simplified filters
+        Focus on core quality indicators, allow moderate signals
+        Returns: (is_valid, reason)
+        """
+        from config import (USE_SUPERTREND, MAX_ATR_THRESHOLD,
+                            REQUIRE_STRONG_CANDLE, MIN_CANDLE_BODY_PCT,
+                            MIN_ADX_THRESHOLD)
+
+        row = df.iloc[-1]
+
+        # FILTER #0: Multi-Timeframe Trend Alignment (CRITICAL - Professional Edge)
+        from indicators import check_mtf_alignment
+        mtf_allowed, mtf_reason = check_mtf_alignment(self.client, SYMBOL, side)
+        if not mtf_allowed:
+            return False, mtf_reason
+
+        # FILTER #1: SuperTrend Confirmation (Keep - proven effective)
+        if USE_SUPERTREND:
+            supertrend_dir = row.get("supertrend_direction", 0)
+            if side == "BUY" and supertrend_dir != 1:
+                return False, "SuperTrend not bullish"
+            elif side == "SELL" and supertrend_dir != -1:
+                return False, "SuperTrend not bearish"
+
+        # FILTER #2: ADX Trend Strength (Keep - essential)
+        adx = row.get("adx", 0)
+        if adx < MIN_ADX_THRESHOLD:
+            return False, f"Trend too weak (ADX {adx:.1f} < {MIN_ADX_THRESHOLD})"
+
+        # FILTER #3: Volatility Range Check (Keep - risk management)
+        atr_pct = row.get("atr_pct", 0)
+        if atr_pct > MAX_ATR_THRESHOLD:
+            return False, f"Volatility too high ({atr_pct:.2%})"
+
+        # FILTER #4: Price Action Confirmation (Simplified)
+        if REQUIRE_STRONG_CANDLE:
+            candle_body = row.get("candle_body", 0) / 100  # Convert to decimal
+            if candle_body < MIN_CANDLE_BODY_PCT:
+                return False, f"Weak candle body ({candle_body:.2%})"
+
+            # Check candle direction matches signal
+            is_bullish = row.get("is_bullish", 0)
+            if side == "BUY" and not is_bullish:
+                return False, "Bearish candle on BUY signal"
+            elif side == "SELL" and is_bullish:
+                return False, "Bullish candle on SELL signal"
+
+        return True, "Strategy v2.0 filters passed"
 
     # ── ML Training ───────────────────────────────────────────
     def _initial_train(self):

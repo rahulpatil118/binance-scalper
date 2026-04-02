@@ -8,6 +8,7 @@ class Dashboard {
         this.chart = null;
         this.isUpdating = false;
         this.tradesOffset = 0;
+        this.lastPrice = 0;
     }
 
     async init() {
@@ -91,7 +92,40 @@ class Dashboard {
 
         // Update header
         $('#symbol').text(data.symbol);
-        $('#current-price').text(this.formatPrice(data.price));
+
+        // Real-time price update with color change animation
+        const $price = $('#current-price');
+        const currentPrice = data.price;
+
+        if (this.lastPrice > 0) {
+            if (currentPrice > this.lastPrice) {
+                $price.css({
+                    'color': 'var(--accent-green)',
+                    'text-shadow': '0 0 20px rgba(0, 208, 132, 0.5)'
+                });
+                setTimeout(() => {
+                    $price.css({
+                        'color': 'var(--accent-green)',
+                        'text-shadow': 'none'
+                    });
+                }, 500);
+            } else if (currentPrice < this.lastPrice) {
+                $price.css({
+                    'color': 'var(--accent-red)',
+                    'text-shadow': '0 0 20px rgba(246, 70, 93, 0.5)'
+                });
+                setTimeout(() => {
+                    $price.css({
+                        'color': 'var(--accent-red)',
+                        'text-shadow': 'none'
+                    });
+                }, 500);
+            }
+        }
+
+        $price.text(this.formatPrice(currentPrice));
+        this.lastPrice = currentPrice;
+
         $('#env-badge').text(data.environment);
         $('#mode-badge').text(data.mode + (data.leverage > 1 ? ` ${data.leverage}x` : ''));
 
@@ -104,34 +138,83 @@ class Dashboard {
 
         console.log('✓ Status updated');
 
-        // Color code P&L
-        $('#total-pnl').css('color', data.account.total_pnl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)');
-        $('#daily-pnl').css('color', data.account.daily_pnl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)');
+        // Color code P&L with glow
+        if (data.account.total_pnl >= 0) {
+            $('#total-pnl').css({
+                'color': 'var(--accent-green)',
+                'text-shadow': '0 0 10px rgba(0, 208, 132, 0.3)'
+            });
+        } else {
+            $('#total-pnl').css({
+                'color': 'var(--accent-red)',
+                'text-shadow': '0 0 10px rgba(246, 70, 93, 0.3)'
+            });
+        }
 
-        // Win rate color
+        if (data.account.daily_pnl >= 0) {
+            $('#daily-pnl').css({
+                'color': 'var(--accent-green)',
+                'text-shadow': '0 0 10px rgba(0, 208, 132, 0.3)'
+            });
+        } else {
+            $('#daily-pnl').css({
+                'color': 'var(--accent-red)',
+                'text-shadow': '0 0 10px rgba(246, 70, 93, 0.3)'
+            });
+        }
+
+        // Win rate color with glow
         const winRate = data.account.win_rate;
-        let winRateColor = 'var(--text-primary)';
-        if (winRate >= 60) winRateColor = 'var(--accent-green)';
-        else if (winRate < 50) winRateColor = 'var(--accent-red)';
-        $('#win-rate').css('color', winRateColor);
+        if (winRate >= 60) {
+            $('#win-rate').css({
+                'color': 'var(--accent-green)',
+                'text-shadow': '0 0 10px rgba(0, 208, 132, 0.3)'
+            });
+        } else if (winRate < 50) {
+            $('#win-rate').css({
+                'color': 'var(--accent-red)',
+                'text-shadow': '0 0 10px rgba(246, 70, 93, 0.3)'
+            });
+        } else {
+            $('#win-rate').css({
+                'color': 'var(--text-primary)',
+                'text-shadow': 'none'
+            });
+        }
     }
 
     updateSignals(data) {
         const combined = data.combined;
 
-        // Update signal display
-        $('#signal-value').text(combined.toFixed(4));
+        // Update signal display with enhanced formatting
+        $('#signal-value').text(combined >= 0 ? '+' + combined.toFixed(4) : combined.toFixed(4));
 
-        // Direction and color
+        // Direction and color with glow effect
         let direction = '⚪ HOLD';
         let color = 'var(--text-secondary)';
+        let indicatorClass = '';
 
         if (data.direction === 'BUY') {
             direction = '🟢 BUY';
             color = 'var(--accent-green)';
+            indicatorClass = 'buy';
+            $('#signal-direction').css({
+                'color': color,
+                'text-shadow': '0 0 10px rgba(0, 208, 132, 0.5)'
+            });
         } else if (data.direction === 'SELL') {
             direction = '🔴 SELL';
             color = 'var(--accent-red)';
+            indicatorClass = 'sell';
+            $('#signal-direction').css({
+                'color': color,
+                'text-shadow': '0 0 10px rgba(246, 70, 93, 0.5)'
+            });
+        } else {
+            $('#signal-direction').css({
+                'color': color,
+                'text-shadow': 'none'
+            });
         }
 
         $('#signal-direction').text(direction);
@@ -139,21 +222,43 @@ class Dashboard {
 
         // Signal meter indicator position (map [-1, 1] to [0%, 100%])
         const position = ((combined + 1) / 2) * 100;
-        $('#signal-indicator').css('left', `${position}%`);
+        const $indicator = $('#signal-indicator');
+        $indicator.css('left', `${position}%`);
 
-        // Update strategy scores
+        // Update indicator class for color/glow
+        $indicator.removeClass('buy sell');
+        if (indicatorClass) {
+            $indicator.addClass(indicatorClass);
+        }
+
+        // Update strategy scores with enhanced visuals
         for (const [strategy, score] of Object.entries(data.strategies)) {
             const width = ((score + 1) / 2) * 100;
-            $(`#bar-${strategy}`).css('width', `${width}%`);
-            $(`#score-${strategy}`).text(score.toFixed(2));
+            const $bar = $(`#bar-${strategy}`);
+            const $score = $(`#score-${strategy}`);
 
-            // Color code bars
-            if (score > 0) {
-                $(`#bar-${strategy}`).css('background', 'linear-gradient(90deg, var(--accent-green), #00b86e)');
-            } else if (score < 0) {
-                $(`#bar-${strategy}`).css('background', 'linear-gradient(90deg, var(--accent-red), #d93850)');
+            $bar.css('width', `${width}%`);
+            $score.text(score >= 0 ? '+' + score.toFixed(2) : score.toFixed(2));
+
+            // Color code bars with glow
+            if (score > 0.1) {
+                $bar.css({
+                    'background': 'linear-gradient(90deg, var(--accent-green), #00b86e)',
+                    'box-shadow': '0 0 10px rgba(0, 208, 132, 0.3)'
+                });
+                $score.css('color', 'var(--accent-green)');
+            } else if (score < -0.1) {
+                $bar.css({
+                    'background': 'linear-gradient(90deg, var(--accent-red), #d93850)',
+                    'box-shadow': '0 0 10px rgba(246, 70, 93, 0.3)'
+                });
+                $score.css('color', 'var(--accent-red)');
             } else {
-                $(`#bar-${strategy}`).css('background', 'var(--text-dim)');
+                $bar.css({
+                    'background': 'var(--text-dim)',
+                    'box-shadow': 'none'
+                });
+                $score.css('color', 'var(--text-secondary)');
             }
         }
     }

@@ -177,91 +177,152 @@ body {
 /* Signal Panel */
 .signal-panel {
     background: linear-gradient(135deg, var(--bg-card) 0%, #1e2533 100%);
+    border: 1px solid rgba(255,255,255,0.05);
 }
 
 .signal-display {
-    margin-bottom: 25px;
+    margin-bottom: 15px;
+    padding: 12px;
+    background: rgba(0,0,0,0.2);
+    border-radius: 8px;
 }
 
 .signal-score {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 15px;
+    margin-bottom: 12px;
 }
 
 #signal-direction {
-    font-size: 24px;
+    font-size: 20px;
     font-weight: 700;
+    transition: all 0.3s ease;
+    letter-spacing: 0.5px;
 }
 
 #signal-value {
-    font-size: 28px;
+    font-size: 22px;
     font-weight: 700;
     color: var(--text-secondary);
+    font-family: 'Courier New', monospace;
+    transition: all 0.3s ease;
 }
 
 .signal-meter {
     height: 8px;
     background: linear-gradient(to right,
         var(--accent-red) 0%,
+        rgba(246, 70, 93, 0.5) 25%,
         var(--text-dim) 50%,
+        rgba(0, 208, 132, 0.5) 75%,
         var(--accent-green) 100%);
     border-radius: 4px;
     position: relative;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.3);
+    overflow: visible;
 }
 
 .signal-indicator {
     position: absolute;
-    top: -4px;
+    top: -5px;
     left: 50%;
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
     background: white;
     border: 3px solid var(--bg-card);
     border-radius: 50%;
     transform: translateX(-50%);
-    transition: left 0.5s ease;
-    box-shadow: 0 0 10px rgba(255,255,255,0.5);
+    transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 0 15px rgba(255,255,255,0.8),
+                0 0 30px rgba(255,255,255,0.4);
+    z-index: 10;
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        box-shadow: 0 0 20px rgba(255,255,255,0.8),
+                    0 0 40px rgba(255,255,255,0.4);
+    }
+    50% {
+        box-shadow: 0 0 30px rgba(255,255,255,1),
+                    0 0 60px rgba(255,255,255,0.6);
+    }
+}
+
+/* Signal indicator colors based on position */
+.signal-indicator.buy {
+    background: var(--accent-green);
+    box-shadow: 0 0 20px var(--accent-green),
+                0 0 40px rgba(0, 208, 132, 0.5);
+}
+
+.signal-indicator.sell {
+    background: var(--accent-red);
+    box-shadow: 0 0 20px var(--accent-red),
+                0 0 40px rgba(246, 70, 93, 0.5);
 }
 
 /* Strategy Scores */
 .strategy-scores {
     display: flex;
     flex-direction: column;
-    gap: 15px;
+    gap: 10px;
 }
 
 .strategy-row {
     display: grid;
-    grid-template-columns: 120px 1fr 60px;
+    grid-template-columns: 100px 1fr 55px;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
 }
 
 .strategy-name {
-    font-size: 14px;
+    font-size: 13px;
     color: var(--text-secondary);
 }
 
 .strategy-bar {
-    height: 24px;
+    height: 20px;
     background: var(--bg-dark);
     border-radius: 4px;
     overflow: hidden;
     position: relative;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.3);
 }
 
 .bar-fill {
     height: 100%;
     background: linear-gradient(90deg, var(--accent-green), var(--accent-blue));
     width: 50%;
-    transition: width 0.5s ease;
-    border-radius: 4px;
+    transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 6px;
+    position: relative;
+    overflow: hidden;
+}
+
+.bar-fill::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg,
+        transparent,
+        rgba(255,255,255,0.3),
+        transparent);
+    animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+    0% { left: -100%; }
+    100% { left: 100%; }
 }
 
 .strategy-score {
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 600;
     text-align: right;
 }

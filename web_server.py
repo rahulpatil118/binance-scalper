@@ -381,6 +381,30 @@ def api_performance():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/api/learning')
+def api_learning():
+    """
+    GET /api/learning
+    Returns: Self-learning AI status and optimized parameters
+    """
+    try:
+        if bot_instance and hasattr(bot_instance, 'learner'):
+            report = bot_instance.learner.get_performance_report()
+            return jsonify({
+                "learning_active": True,
+                "performance": report,
+                "message": "Self-learning AI is active and optimizing parameters"
+            })
+        else:
+            return jsonify({
+                "learning_active": False,
+                "message": "Self-learning system not initialized"
+            })
+    except Exception as e:
+        log.error(f"Error in /api/learning: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Server startup ─────────────────────────────────────────
 
 def start_web_server(risk_manager_inst, trade_logger_inst, signal_aggregator_inst,
