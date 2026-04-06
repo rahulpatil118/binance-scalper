@@ -345,6 +345,7 @@ class ScalpingBot:
         """
         from config import (USE_SUPERTREND, MAX_ATR_THRESHOLD,
                             REQUIRE_STRONG_CANDLE, MIN_CANDLE_BODY_PCT,
+                            USE_DYNAMIC_CANDLE_FILTER, CANDLE_BODY_ATR_RATIO,
                             MIN_ADX_THRESHOLD)
 
         row = df.iloc[-1]
@@ -373,11 +374,24 @@ class ScalpingBot:
         if atr_pct > MAX_ATR_THRESHOLD:
             return False, f"Volatility too high ({atr_pct:.2%})"
 
-        # FILTER #4: Price Action Confirmation (Simplified)
+        # FILTER #4: Price Action Confirmation (FIXED: Dynamic based on volatility)
         if REQUIRE_STRONG_CANDLE:
             candle_body = row.get("candle_body", 0) / 100  # Convert to decimal
-            if candle_body < MIN_CANDLE_BODY_PCT:
-                return False, f"Weak candle body ({candle_body:.2%})"
+
+            # Dynamic candle filter: adjust requirement based on ATR
+            if USE_DYNAMIC_CANDLE_FILTER:
+                atr = row.get("atr", 0)
+                price = row.get("close", 1)
+                atr_pct = (atr / price) if price > 0 else 0
+
+                # In high volatility, require smaller candles (15% of ATR)
+                # In low volatility, use fixed minimum
+                min_candle_required = max(MIN_CANDLE_BODY_PCT, atr_pct * CANDLE_BODY_ATR_RATIO)
+            else:
+                min_candle_required = MIN_CANDLE_BODY_PCT
+
+            if candle_body < min_candle_required:
+                return False, f"Weak candle body ({candle_body:.2%} < {min_candle_required:.2%})"
 
             # Check candle direction matches signal
             is_bullish = row.get("is_bullish", 0)

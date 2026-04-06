@@ -141,6 +141,8 @@ MAX_INDICATOR_CONFLICT = 0.3    # Max 30% conflict between strategies
 MIN_VOLUME_RATIO = 1.5          # Already defined above
 VOLUME_SPIKE_RATIO = 2.5        # Extra confidence on 2.5x+ volume spikes
 
-# Price Action Confirmation
+# Price Action Confirmation (FIXED: Dynamic based on volatility)
 REQUIRE_STRONG_CANDLE = True    # Candle body must be strong
-MIN_CANDLE_BODY_PCT = 0.0033    # 0.33% minimum (AI-Optimized from historical data)
+MIN_CANDLE_BODY_PCT = 0.0010    # 0.10% minimum (3x more lenient, adapts to volatility)
+USE_DYNAMIC_CANDLE_FILTER = True  # Adjust candle requirement based on ATR
+CANDLE_BODY_ATR_RATIO = 0.15    # In high volatility, require candle = 15% of ATR
