@@ -59,8 +59,8 @@ STRATEGY_WEIGHTS = {
 SIGNAL_THRESHOLD = 0.04      # Strategy v2.0: Balanced scalping (was 0.08)
 
 # ── TIME-BASED FILTERS ───────────────────────────────────────
-BLACKLIST_HOURS = [6, 7, 11, 12, 21]  # Avoid historically poor hours
-WHITELIST_HOURS = []
+BLACKLIST_HOURS = []  # Removed - old data was tainted by broken candle filter
+WHITELIST_HOURS = []  # Trade all hours with fixed system
 
 # ── RSI + EMA STRATEGY (5m optimized) ────────────────────────
 RSI_PERIOD       = 7
