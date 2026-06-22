@@ -1,0 +1,24 @@
+# secrets — NEVER commit
+.env
+
+# python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+env/
+
+# bot runtime data
+deribit/opt_history.json
+*.log
+
+# local scratch / deploy helpers
+_*.ps1
+_*.json
+
+# claude local settings
+.claude/
+
+# os
+Thumbs.db
+.DS_Store

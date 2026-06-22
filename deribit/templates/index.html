@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Deribit Options Bot — Live</title>
+<style>
+  :root{
+    --bg:#0b0e14; --panel:#141a24; --panel2:#1b232f; --line:#222c3a;
+    --txt:#e6edf3; --muted:#8b98a9; --green:#27c281; --red:#ff5d6c;
+    --accent:#4c8dff; --amber:#ffb84d;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:1180px;margin:0 auto;padding:18px 18px 60px;}
+  header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px;}
+  h1{font-size:18px;margin:0;font-weight:650;letter-spacing:.2px}
+  .sub{color:var(--muted);font-size:12.5px;margin-top:3px}
+  .badges{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .badge{font-size:11.5px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:var(--panel);color:var(--muted)}
+  .badge.on{color:#0b0e14;background:var(--green);border-color:var(--green);font-weight:600}
+  .badge.off{color:#0b0e14;background:var(--amber);border-color:var(--amber);font-weight:600}
+  .badge.test{color:#0b0e14;background:var(--accent);border-color:var(--accent);font-weight:600}
+  .badge.live{color:#fff;background:var(--red);border-color:var(--red);font-weight:600}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--muted);vertical-align:middle}
+  .dot.live{background:var(--green);animation:pulse 1.6s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(39,194,129,.55)}70%{box-shadow:0 0 0 7px rgba(39,194,129,0)}100%{box-shadow:0 0 0 0 rgba(39,194,129,0)}}
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+  .card .k{color:var(--muted);font-size:12px;margin-bottom:7px}
+  .card .v{font-size:23px;font-weight:680;letter-spacing:.3px}
+  .card .v small{font-size:13px;color:var(--muted);font-weight:500}
+  .big{grid-column:span 2}
+  .big .v{font-size:34px}
+  .pos{color:var(--green)} .neg{color:var(--red)}
+  .row2{display:grid;grid-template-columns:1.35fr 1fr;gap:12px}
+  @media(max-width:880px){.grid{grid-template-columns:repeat(2,1fr)}.big{grid-column:span 2}.row2{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:12px}
+  .panel h2{font-size:13px;margin:0 0 12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.6px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:8px 8px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.4px}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  tr:last-child td{border-bottom:none}
+  .empty{color:var(--muted);font-size:13px;padding:14px 4px}
+  .openpos{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+  @media(max-width:880px){.openpos{grid-template-columns:repeat(2,1fr)}}
+  .mini .k{color:var(--muted);font-size:11.5px;margin-bottom:4px}
+  .mini .v{font-size:16px;font-weight:600;font-variant-numeric:tabular-nums}
+  .log{background:#0a0d12;border:1px solid var(--line);border-radius:10px;padding:10px;height:260px;overflow:auto;
+    font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;line-height:1.55;color:#c4d0de}
+  .log div{white-space:pre-wrap;word-break:break-word}
+  .foot{color:var(--muted);font-size:12px;margin-top:8px;text-align:right}
+  .err{color:var(--amber);font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Deribit Options Bot</h1>
+      <div class="sub" id="strategy">—</div>
+    </div>
+    <div class="badges">
+      <span class="badge" id="status"><span class="dot" id="dot"></span><span id="statusTxt">connecting…</span></span>
+      <span class="badge" id="net">—</span>
+      <span class="badge" id="trade">—</span>
+    </div>
+  </header>
+
+  <div class="grid">
+    <div class="card big">
+      <div class="k">Realized Profit (USDT)</div>
+      <div class="v" id="pnlUsd">—</div>
+      <div class="k" style="margin-top:8px">Unrealized (open position): <span id="upnlUsd">—</span></div>
+    </div>
+    <div class="card">
+      <div class="k">Win / Loss</div>
+      <div class="v" id="wl">—</div>
+      <div class="k" id="winrate" style="margin-top:6px">—</div>
+    </div>
+    <div class="card">
+      <div class="k">Realized (BTC)</div>
+      <div class="v" id="pnlBtc">—</div>
+      <div class="k" id="trades_n" style="margin-top:6px">— trades</div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card"><div class="k">BTC Index</div><div class="v" id="index">—</div></div>
+    <div class="card"><div class="k">Account Equity</div><div class="v" id="equity">—</div></div>
+    <div class="card"><div class="k">Available</div><div class="v" id="avail">—</div></div>
+    <div class="card"><div class="k">Equity (USDT)</div><div class="v" id="equityUsd">—</div></div>
+  </div>
+
+  <div class="panel">
+    <h2>Open Position</h2>
+    <div id="posBox"><div class="empty">No open position — bot is flat / waiting to sell the next put.</div></div>
+  </div>
+
+  <div class="row2">
+    <div class="panel">
+      <h2>Closed Trades</h2>
+      <div id="tradesBox"><div class="empty">No closed trades yet.</div></div>
+    </div>
+    <div class="panel">
+      <h2>Live Log</h2>
+      <div class="log" id="log"></div>
+    </div>
+  </div>
+
+  <div class="foot" id="foot">—</div>
+  <div class="foot err" id="errline"></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const fmt = (n,d=2) => (n==null||isNaN(n)) ? "—" : Number(n).toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d});
+const usd = n => (n==null||isNaN(n)) ? "—" : (n<0?"-$":"$") + fmt(Math.abs(n),2);
+const cls = n => (n==null||isNaN(n)) ? "" : (n>=0?"pos":"neg");
+const sign = n => (n>0?"+":"");
+const ansi = s => String(s).replace(/\x1b\[[0-9;]*m/g,"");
+
+async function tick(){
+  try{
+    const r = await fetch("/api/state",{cache:"no-store"});
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    const s = await r.json();
+    $("errline").textContent = "";
+    render(s);
+  }catch(e){
+    $("errline").textContent = "connection error: " + e.message + " — retrying…";
+    $("dot").className = "dot";
+    $("statusTxt").textContent = "offline";
+  }
+}
+
+function render(s){
+  const idx = s.index || 0;
+  $("strategy").textContent = s.strategy || "—";
+  $("statusTxt").textContent = s.status || "—";
+  $("dot").className = "dot" + (s.status==="running" ? " live" : "");
+  $("net").textContent = s.testnet ? "TESTNET" : "LIVE";
+  $("net").className = "badge " + (s.testnet ? "test" : "live");
+  const trading = s.trading_enabled && s.auth_ok;
+  $("trade").textContent = trading ? "TRADING" : (s.auth_ok ? "SIGNALS ONLY" : "NO AUTH");
+  $("trade").className = "badge " + (trading ? "on" : "off");
+
+  const ru = s.realized_usd;
+  $("pnlUsd").innerHTML = (ru==null?"—":sign(ru)+usd(ru));
+  $("pnlUsd").className = "v " + cls(ru);
+  $("pnlBtc").innerHTML = (s.realized_btc==null?"—":sign(s.realized_btc)+fmt(s.realized_btc,6)) + ' <small>BTC</small>';
+  $("pnlBtc").className = "v " + cls(s.realized_btc);
+
+  const w=s.wins||0,l=s.losses||0,tot=w+l;
+  $("wl").innerHTML = `<span class="pos">${w}</span> / <span class="neg">${l}</span>`;
+  $("winrate").textContent = tot? (Math.round(w/tot*100)+"% win rate") : "no closed trades";
+  $("trades_n").textContent = (s.trades?s.trades.length:0) + " recent trades";
+
+  $("index").innerHTML = fmt(idx,2)+' <small>USD</small>';
+  $("equity").innerHTML = fmt(s.equity_btc,4)+' <small>BTC</small>';
+  $("avail").innerHTML = fmt(s.avail_btc,4)+' <small>BTC</small>';
+  $("equityUsd").innerHTML = usd(s.equity_usd);
+
+  const p = s.position;
+  if(p){
+    const upnlUsd = (p.upnl_btc!=null && idx)? p.upnl_btc*idx : null;
+    $("upnlUsd").innerHTML = upnlUsd==null?"—":`<span class="${cls(upnlUsd)}">${sign(upnlUsd)}${usd(upnlUsd)}</span>`;
+    $("posBox").innerHTML = `<div class="openpos">
+      <div class="mini"><div class="k">Instrument</div><div class="v">${p.inst||"—"}</div></div>
+      <div class="mini"><div class="k">Size (BTC)</div><div class="v">${fmt(p.size,2)}</div></div>
+      <div class="mini"><div class="k">Entry premium</div><div class="v">${p.entry_premium!=null?fmt(p.entry_premium,4):"—"}</div></div>
+      <div class="mini"><div class="k">Mark</div><div class="v">${fmt(p.mark,4)}</div></div>
+      <div class="mini"><div class="k">Unrealized</div><div class="v ${cls(upnlUsd)}">${upnlUsd==null?"—":sign(upnlUsd)+usd(upnlUsd)}</div></div>
+    </div>`;
+  }else{
+    $("upnlUsd").textContent = "$0.00";
+    $("posBox").innerHTML = `<div class="empty">No open position — bot is flat / waiting to sell the next put.</div>`;
+  }
+
+  const tr = s.trades||[];
+  if(tr.length){
+    let rows = tr.map(t=>`<tr>
+      <td>${t.closed||"—"}</td>
+      <td>${t.inst||"—"}</td>
+      <td class="num ${cls(t.pnl_btc)}">${sign(t.pnl_btc)}${fmt(t.pnl_btc,6)}</td>
+      <td class="num ${cls(t.pnl_usd)}">${sign(t.pnl_usd)}${usd(t.pnl_usd)}</td>
+    </tr>`).join("");
+    $("tradesBox").innerHTML = `<table><thead><tr>
+      <th>Closed</th><th>Instrument</th><th class="num">P&L (BTC)</th><th class="num">P&L (USDT)</th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
+  }else{
+    $("tradesBox").innerHTML = `<div class="empty">No closed trades yet.</div>`;
+  }
+
+  $("log").innerHTML = (s.log||[]).map(x=>`<div>${ansi(x)}</div>`).join("");
+
+  $("foot").textContent = "Last update: " + (s.last_update? new Date(s.last_update).toLocaleString() : "—") + "  ·  auto-refresh 3s";
+}
+
+tick();
+setInterval(tick, 3000);
+</script>
+</body>
+</html>
